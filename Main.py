@@ -1,5 +1,102 @@
-import DES_ENC
-from DES_ENC import text_to_binary
+
+import os
+def text_to_binary(text):
+    binary_result = ''.join(format(ord(char), '08b') for char in text)
+    return binary_result
+#====================================================================================
+def int_to_binary(number):
+    binary = bin(number)[2:]
+    return binary.zfill(4)
+#====================================================================================
+def binary_to_decimal(binary_string):
+    decimal_value = 0
+    power = 0
+    for digit in reversed(binary_string):
+        if digit == '1':
+            decimal_value += 2 ** power
+        power += 1
+    return decimal_value
+#====================================================================================
+def permutation(plaintext_in, ip):
+    after_ip = ""
+    for index in ip:
+        after_ip += plaintext_in[index - 1]
+    return after_ip
+#====================================================================================
+def r_expansion(plaintext_right, E):
+    after_expansion = ""
+    for index in E:
+        after_expansion += plaintext_right[index - 1]
+    return after_expansion
+#====================================================================================
+def xor(plaintext_in, key):
+    xored_string = ""
+    for i in range(len(plaintext_in)):  # Use len(plaintext_in) for flexibility
+        if plaintext_in[i] == '0' and key[i] == '0':
+            xored_string += "0"
+        elif (plaintext_in[i] == '0' and key[i] == '1') or \
+                (plaintext_in[i] == '1' and key[i] == '0'):
+            xored_string += "1"
+        elif plaintext_in[i] == '1' and key[i] == '1':
+            xored_string += "0"
+    return xored_string
+
+#====================================================================================
+
+def sbox(plaintext_binary, S_BOXES):
+    result = ""
+    row_bits = ""
+    column_bits = ""
+    round = 0
+    for i in range(8):
+        row_bits = plaintext_binary[round] + plaintext_binary[round + 5]
+        row = binary_to_decimal(row_bits)
+
+        column_bits = plaintext_binary[round + 1 : round + 5]
+        column = binary_to_decimal(column_bits)
+
+        result += int_to_binary(S_BOXES[i][row][column])
+        round += 6
+    return result
+
+#====================================================================================
+def des_encrypt(binary, key, E, P, S_BOXES, final_swap_flag):
+    binary_initial_permutation = binary
+
+    half_point = len(binary_initial_permutation) // 2
+    left_half = binary_initial_permutation[:half_point]
+    print(" ")
+    print("left half: " + left_half)
+    right_half = binary_initial_permutation[half_point:]
+    print(" ")
+    print("right half: " + right_half)
+
+    right_expanded = r_expansion(right_half, E)
+    print(" ")
+    print("right expanded: " + right_expanded)
+    xored_right = xor(right_expanded, key)
+    print(" ")
+    print("xored right: " + xored_right)
+    sbox_result = sbox(xored_right, S_BOXES)
+    print(" ")
+    print("sbox result: " + sbox_result)
+
+    permutated_right = permutation(sbox_result , P)
+    print(" ")
+    print("permutated right: " + permutated_right)
+    xored_left = xor(permutated_right , left_half)
+    print(" ")
+    print("xored left: " + xored_left)
+
+    if final_swap_flag:
+        final_result = xored_left + right_half
+        return final_result
+    final_result = right_half + xored_left
+    print(" ")
+    print("final result: " + final_result)
+    print("END OF ROUND")
+    return final_result
+#====================================================================================
 
 IP = [58, 50, 42, 34, 26, 18, 10, 2, 60, 52, 44, 36, 28, 20, 12, 4,
       62, 54, 46, 38, 30, 22, 14, 6, 64, 56, 48, 40, 32, 24, 16, 8,
@@ -58,16 +155,86 @@ FP = [40, 8, 48, 16, 56, 24, 64, 32, 39, 7, 47, 15, 55, 23, 63, 31,
       36, 4, 44, 12, 52, 20, 60, 28, 35, 3, 43, 11, 51, 19, 59, 27,
       34, 2, 42, 10, 50, 18, 58, 26, 33, 1, 41, 9, 49, 17, 57, 25]
 
-key = "010101010101010101010101010101010101010101010101"  # Corrected key
-
-plaintext = "Hello world!"
+key = "010101010101010101010101010101010101010101010101"
 
 ROUNDS = 16
 
-binary = text_to_binary(plaintext)
-current_binary = DES_ENC.permutation(binary, IP)
+def pad_plaintext(binary_plaintext):
+    padding_needed = 64 - (len(binary_plaintext) % 64)
+    if padding_needed < 64:
+        binary_plaintext += "1" + "0" * (padding_needed -1)
+    else:
+        binary_plaintext+= "1" + "0" * (padding_needed-1)
+    return binary_plaintext
 
-for i in range(ROUNDS):
-    current_binary = DES_ENC.des_encrypt(current_binary, key, E, P, S_BOXES)
-    print(f"Final result of round {i + 1}  :  {current_binary}")
-    print("#============================================================================================#")
+def split_into_blocks(binary_plaintext):
+    blocks = [binary_plaintext[i:i + 64] for i in range(0, len(binary_plaintext), 64)]
+    return blocks
+
+def cbc_encrypt(plaintext, key, iv, E, P, S_BOXES):
+    binary_plaintext = text_to_binary(plaintext)
+    binary_plaintext = pad_plaintext(binary_plaintext)
+    blocks = split_into_blocks(binary_plaintext)
+
+    print("Binary_plaintext : " + binary_plaintext)
+
+    ciphertext_blocks = []
+    previous_block_cipher = iv
+    for block_index, block in enumerate(blocks):
+        print(f"\nEncrypting Block {block_index + 1}:")
+        xored_block = xor(block, previous_block_cipher)
+        print(f"  XORed with previous block cipher: {xored_block}")
+
+        # Apply Initial Permutation
+        current_binary = permutation(xored_block, IP)
+        print(f"  After Initial Permutation: {current_binary}")
+        print(" ")
+        print("Inside DES round:")
+
+        # DES Encryption Rounds
+        final_swap_flag = False
+        for i in range(ROUNDS):
+            if i == 15:
+                final_swap_flag = True
+            current_binary = des_encrypt(current_binary, key, E, P, S_BOXES, final_swap_flag)
+            if i == 15:
+                current_binary = permutation(current_binary, FP)
+
+            #print(f" Final result of round {i + 1}: {current_binary}")
+
+        previous_block_cipher = current_binary
+        ciphertext_blocks.append(current_binary)
+
+    return "".join(ciphertext_blocks)
+
+#========================================================================================================
+
+plaintext = input("Plaintext: ")
+mode = input("Mode (1 is stream, 2 is CBC: ")
+
+if mode == "2":
+    # Generate a random 64-bit IV (Initialization Vector)
+    iv = bin(int(os.urandom(8).hex(), 16))[2:].zfill(64)
+
+    print(f"Plaintext: {plaintext}")
+    print(f"IV: {iv}")
+
+    ciphertext = cbc_encrypt(plaintext, key, iv, E, P, S_BOXES)
+    print(f"\nCiphertext: {ciphertext}")
+    print(f"Ciphertext Length : {len(ciphertext)}")
+
+if mode == "1":
+    binary = text_to_binary(plaintext)
+    print("binary: " + binary)
+
+    current_binary = permutation(binary, IP)
+    final_swap_flag = False
+
+    for i in range(ROUNDS):
+        if i == 15:
+            final_swap_flag = True
+        current_binary = des_encrypt(current_binary, key, E, P, S_BOXES, final_swap_flag)
+        current_binary = permutation(current_binary, FP) #FINAL PERMUTATION
+        print(f"Final result of round {i + 1}  :  {current_binary}")
+        print("#======================================================================================#")
+#========================================================================================================
